@@ -32,6 +32,7 @@ object HbsDecrypt {
         bufferSize: Int = DEFAULT_BUFFER_SIZE,
     ): DecryptionResult {
         if (bufferSize <= 0) return DecryptionResult.Failure(FailureReason.IO_ERROR)
+        if (password.isEmpty()) return DecryptionResult.Failure(FailureReason.INVALID_PASSWORD_OR_DATA)
         return try {
             val header = input.readFully(ENVELOPE_HEADER.size)
                 ?: return DecryptionResult.Failure(FailureReason.NOT_SALTED_ENVELOPE)

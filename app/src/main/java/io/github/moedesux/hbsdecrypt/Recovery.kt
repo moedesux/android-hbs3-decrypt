@@ -18,13 +18,27 @@ class RecoveryRunner(private val resolver: ContentResolver, private val executor
             resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { while (it.moveToNext()) if (name == it.getString(1)) found = DocumentsContract.buildDocumentUriUsingTree(tree, it.getString(0)) }
             if (found != null && policy == CollisionPolicy.SKIP) { onResult("Skipped: $name"); return@execute }
             temporary = DocumentsContract.createDocument(resolver, tree, "application/octet-stream", "$name.part") ?: error("Could not create temporary output")
-            val result = resolver.openInputStream(source)!!.use { input -> resolver.openOutputStream(temporary!!)!!.use { output -> HbsDecrypt.decrypt(input, BufferedOutputStream(output), password, cancellation = cancellation, progress = DecryptionProgress { onProgress(it) }) } }
+            val result = resolver.openInputStream(source)!!.use { input ->
+                resolver.openOutputStream(temporary!!)!!.use { output ->
+                    BufferedOutputStream(output).use { bufferedOutput ->
+                        HbsDecrypt.decrypt(input, bufferedOutput, password, cancellation = cancellation, progress = DecryptionProgress { onProgress(it) })
+                    }
+                }
+            }
             if (result is DecryptionResult.Success) {
                 if (found != null) DocumentsContract.deleteDocument(resolver, found!!)
                 check(DocumentsContract.renameDocument(resolver, temporary!!, name) != null) { "Could not finalize output" }
                 temporary = null
                 onResult("Recovered: $name (${result.bytesWritten} bytes)")
-            } else { onResult("Failed: $result") }
+            } else {
+                val failure = (result as DecryptionResult.Failure).reason
+                onResult(when (failure) {
+                    FailureReason.NOT_SALTED_ENVELOPE -> "Unsupported: $name (not an HBS encrypted file)"
+                    FailureReason.CANCELLED -> "Cancelled: $name"
+                    FailureReason.INVALID_PASSWORD_OR_DATA -> "Failed: $name (wrong password or corrupted data)"
+                    FailureReason.IO_ERROR -> "Failed: $name (I/O error)"
+                })
+            }
         } catch (e: Exception) { onResult("Failed: ${e.message ?: "I/O error"}") } finally {
             temporary?.let { runCatching { DocumentsContract.deleteDocument(resolver, it) } }
             password.fill('\u0000')
