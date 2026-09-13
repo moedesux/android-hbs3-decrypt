@@ -15,6 +15,7 @@ local.properties
 # SDK and native build state
 .externalNativeBuild/
 .cxx/
+.android-sdk/
 
 # Signing material
 *.jks
