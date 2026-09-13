@@ -7,11 +7,12 @@ import java.io.BufferedOutputStream
 import java.util.concurrent.Executor
 
 enum class CollisionPolicy { SKIP, REPLACE }
-data class RecoveryState(val source: Uri? = null, val destination: Uri? = null, val passwordPresent: Boolean = false, val running: Boolean = false, val bytesRead: Long = 0, val outcome: String? = null) { val canStart get() = source != null && destination != null && passwordPresent && !running }
+data class RecoveryState(val source: Uri? = null, val destination: Uri? = null, val passwordPresent: Boolean = false, val running: Boolean = false, val bytesRead: Long = 0, val outcome: String? = null, val collisionPolicy: CollisionPolicy = CollisionPolicy.SKIP) { val canStart get() = source != null && destination != null && passwordPresent && !running }
 
 class RecoveryRunner(private val resolver: ContentResolver, private val executor: Executor) {
     fun run(source: Uri, tree: Uri, password: CharArray, policy: CollisionPolicy = CollisionPolicy.SKIP, cancellation: DecryptionCancellation = DecryptionCancellation { false }, onProgress: (Long) -> Unit, onResult: (String) -> Unit) = executor.execute {
         var temporary: Uri? = null
+        var backup: Uri? = null
         try {
             val name = resolver.query(source, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) else "recovered.bin" } ?: "recovered.bin"
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree)); var found: Uri? = null
@@ -26,9 +27,21 @@ class RecoveryRunner(private val resolver: ContentResolver, private val executor
                 }
             }
             if (result is DecryptionResult.Success) {
-                if (found != null) DocumentsContract.deleteDocument(resolver, found!!)
-                check(DocumentsContract.renameDocument(resolver, temporary!!, name) != null) { "Could not finalize output" }
+                if (found != null) {
+                    val backupName = ".$name.replace-${System.nanoTime()}.part"
+                    backup = DocumentsContract.renameDocument(resolver, found!!, backupName)
+                        ?: error("Provider cannot safely replace existing output")
+                }
+                try {
+                    check(DocumentsContract.renameDocument(resolver, temporary!!, name) != null) { "Could not finalize output safely" }
+                } catch (e: Exception) {
+                    val restored = backup?.let { runCatching { DocumentsContract.renameDocument(resolver, it, name) }.isSuccess } == true
+                    if (restored) backup = null
+                    throw e
+                }
+                backup?.let { runCatching { DocumentsContract.deleteDocument(resolver, it) } }
                 temporary = null
+                backup = null
                 onResult("Recovered: $name (${result.bytesWritten} bytes)")
             } else {
                 val failure = (result as DecryptionResult.Failure).reason

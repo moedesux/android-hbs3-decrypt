@@ -48,10 +48,25 @@ class RecoveryProviderTest {
         assertTrue(childNames().isEmpty())
     }
 
-    private fun runRecovery(): String {
+    @Test fun replacesExistingDestinationOnlyAfterSuccessfulRecovery() {
+        TestDocumentsProvider.installExisting(resolver, "recovered.bin", "replace me")
+        assertEquals("Recovered: recovered.bin (4 bytes)", runRecovery(CollisionPolicy.REPLACE))
+        assertEquals("test", read("recovered.bin"))
+        assertEquals(listOf("recovered.bin"), childNames())
+    }
+
+    @Test fun failedReplacementPreservesExistingDestination() {
+        TestDocumentsProvider.installExisting(resolver, "recovered.bin", "keep me")
+        TestDocumentsProvider.installInvalidSource(resolver)
+        assertTrue(runRecovery(CollisionPolicy.REPLACE).startsWith("Failed:"))
+        assertEquals("keep me", read("recovered.bin"))
+        assertEquals(listOf("recovered.bin"), childNames())
+    }
+
+    private fun runRecovery(policy: CollisionPolicy = CollisionPolicy.SKIP): String {
         var outcome: String? = null
         val latch = CountDownLatch(1)
-        RecoveryRunner(resolver, executor).run(source, tree, "provider-password".toCharArray(), onProgress = {}, onResult = { outcome = it; latch.countDown() })
+        RecoveryRunner(resolver, executor).run(source, tree, "provider-password".toCharArray(), policy = policy, onProgress = {}, onResult = { outcome = it; latch.countDown() })
         assertTrue(latch.await(2, TimeUnit.SECONDS))
         return outcome!!
     }
