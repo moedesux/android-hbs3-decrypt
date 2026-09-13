@@ -16,13 +16,13 @@ import androidx.compose.ui.unit.dp
 import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
-    private val sourcePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(::takeSource) }
+    private val sourcePicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let(::takeSource) }
     private val destinationPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let(::takeDestination) }
     private var state by mutableStateOf(RecoveryState()); private var source: Uri? = null; private var destination: Uri? = null; private var password = ""; private var cancelRequested = false
-    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); setContent { HbsDecryptApp(state, password, { sourcePicker.launch(arrayOf("*/*")) }, { destinationPicker.launch(null) }, { password = it; state = state.copy(passwordPresent = it.isNotEmpty()) }, { state = state.copy(collisionPolicy = it) }, ::start, ::cancel) } }
+    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); setContent { HbsDecryptApp(state, password, { sourcePicker.launch(null) }, { destinationPicker.launch(null) }, { password = it; state = state.copy(passwordPresent = it.isNotEmpty()) }, { state = state.copy(collisionPolicy = it) }, ::start, ::cancel) } }
     private fun takeSource(uri: Uri) { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); source = uri; state = state.copy(source = uri) }
     private fun takeDestination(uri: Uri) { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION); destination = uri; state = state.copy(destination = uri) }
-    private fun start() { val s = source ?: return; val d = destination ?: return; cancelRequested = false; state = state.copy(running = true, outcome = null); window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); RecoveryRunner(contentResolver, Executors.newSingleThreadExecutor()).run(s, d, password.toCharArray(), policy = state.collisionPolicy, cancellation = DecryptionCancellation { cancelRequested }, onProgress = { runOnUiThread { state = state.copy(bytesRead = it) } }, onResult = { runOnUiThread { password = ""; state = state.copy(running = false, passwordPresent = false, outcome = it); window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) } }) }
+    private fun start() { val s = source ?: return; val d = destination ?: return; cancelRequested = false; state = state.copy(running = true, outcome = null, bytesRead = 0); window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); RecoveryRunner(contentResolver, Executors.newSingleThreadExecutor()).runTree(s, d, password.toCharArray(), policy = state.collisionPolicy, cancellation = DecryptionCancellation { cancelRequested }, onProgress = { runOnUiThread { state = state.copy(bytesRead = it) } }, onResult = { runOnUiThread { password = ""; state = state.copy(running = false, passwordPresent = false, outcome = it); window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) } }) }
     private fun cancel() { cancelRequested = true }
 }
 
