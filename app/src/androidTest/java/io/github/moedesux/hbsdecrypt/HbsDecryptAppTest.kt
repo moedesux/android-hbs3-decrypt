@@ -1,6 +1,7 @@
 package io.github.moedesux.hbsdecrypt
 
 import androidx.activity.ComponentActivity
+import android.net.Uri
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -18,9 +19,12 @@ class HbsDecryptAppTest {
         compose.onNodeWithText("Start").assertIsNotEnabled()
     }
 
-    @Test fun rendersProgressAndCompletion() {
+    @Test fun rendersProgress() {
         compose.setContent { HbsDecryptApp(RecoveryState(running = true, bytesRead = 42), "", {}, {}, {}, {}, {}) }
         compose.onNodeWithText("Progress: 42 bytes read").assertIsDisplayed()
+    }
+
+    @Test fun rendersCompletion() {
         compose.setContent { HbsDecryptApp(RecoveryState(outcome = "Recovered: sample (4 bytes)"), "", {}, {}, {}, {}, {}) }
         compose.onNodeWithText("Result: Recovered: sample (4 bytes)").assertIsDisplayed()
     }
@@ -34,5 +38,11 @@ class HbsDecryptAppTest {
         compose.setContent { HbsDecryptApp(RecoveryState(), "", {}, {}, {}, {}, {}) }
         compose.onNodeWithText("Password").performTextInput("secret")
         compose.onNodeWithText("Start").assertIsNotEnabled()
+    }
+
+    @Test fun startEnablesWhenAllInputsArePresent() {
+        val state = RecoveryState(Uri.parse("content://source"), Uri.parse("content://destination"), passwordPresent = true)
+        compose.setContent { HbsDecryptApp(state, "", {}, {}, {}, {}, {}) }
+        compose.onNodeWithText("Start").assertIsEnabled()
     }
 }
