@@ -127,9 +127,8 @@ class TestDocumentsProvider : DocumentsProvider() {
             write(resolver, invalid, byteArrayOf(1, 2, 3))
             write(resolver, empty, EMPTY_FIXTURE)
         }
-        fun sourceTreeUri(): Uri = DocumentsContract.buildDocumentUriUsingTree(
-            DocumentsContract.buildTreeDocumentUri(AUTHORITY, SOURCE_TREE_ID), SOURCE_TREE_ID
-        )
+        /** Matches the bare tree URI returned by OpenDocumentTree on a real device. */
+        fun sourceTreeUri(): Uri = DocumentsContract.buildTreeDocumentUri(AUTHORITY, SOURCE_TREE_ID)
         fun installInvalidSource(resolver: android.content.ContentResolver) = writeSource(resolver, byteArrayOf(1, 2, 3))
         fun installExisting(resolver: android.content.ContentResolver, name: String, contents: String) {
             val document = DocumentsContract.createDocument(resolver, treeUri(), "text/plain", name)!!

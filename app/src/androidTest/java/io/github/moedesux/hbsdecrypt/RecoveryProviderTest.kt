@@ -17,10 +17,8 @@ import org.junit.Test
 class RecoveryProviderTest {
     private val resolver: ContentResolver = InstrumentationRegistry.getInstrumentation().context.contentResolver
     private val executor = Executor { it.run() }
-    private val tree = DocumentsContract.buildDocumentUriUsingTree(
-        DocumentsContract.buildTreeDocumentUri(TestDocumentsProvider.AUTHORITY, TestDocumentsProvider.ROOT_ID),
-        TestDocumentsProvider.ROOT_ID
-    )
+    // OpenDocumentTree returns this bare tree URI, not a document URI built from it.
+    private val tree = DocumentsContract.buildTreeDocumentUri(TestDocumentsProvider.AUTHORITY, TestDocumentsProvider.ROOT_ID)
     private val source = DocumentsContract.buildDocumentUri(TestDocumentsProvider.AUTHORITY, TestDocumentsProvider.SOURCE_ID)
 
     @Before fun setUp() {
@@ -33,6 +31,15 @@ class RecoveryProviderTest {
         assertEquals("Recovered: recovered.bin (4 bytes)", result)
         assertEquals("test", read("recovered.bin"))
         assertEquals(listOf("recovered.bin"), childNames())
+    }
+
+    @Test fun singleFileRecoveryReportsItsCompletionCount() {
+        var counts: RecoveryCounts? = null
+        RecoveryRunner(resolver, executor).run(
+            source, tree, "provider-password".toCharArray(),
+            onProgress = {}, onResult = {}, onComplete = { counts = it }
+        )
+        assertEquals(RecoveryCounts(decrypted = 1), counts)
     }
 
     @Test fun skipsExistingDestinationWithoutTouchingIt() {
