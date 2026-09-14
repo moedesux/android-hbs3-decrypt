@@ -1,0 +1,7 @@
+# Copy this file to signing.properties and replace every value locally.
+# Keep both this file and the keystore safe; signing.properties is ignored by Git.
+# storeFile may be an absolute path, or a path relative to the repository root.
+storeFile=/absolute/path/outside-this-repository/hbs-decrypt-release.jks
+storePassword=replace-with-keystore-password
+keyAlias=hbs-decrypt
+keyPassword=replace-with-key-password

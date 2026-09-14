@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -28,6 +30,33 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+    }
+
+    val signingPropertiesFile = rootProject.file("signing.properties")
+    if (signingPropertiesFile.isFile) {
+        val signingProperties = Properties().apply {
+            signingPropertiesFile.inputStream().use(::load)
+        }
+        val requiredProperties = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+        val missingProperties = requiredProperties.filter { signingProperties.getProperty(it).isNullOrBlank() }
+        check(missingProperties.isEmpty()) {
+            "signing.properties is missing: ${missingProperties.joinToString()}"
+        }
+
+        signingConfigs {
+            create("ownerRelease") {
+                storeFile = rootProject.file(signingProperties.getProperty("storeFile"))
+                storePassword = signingProperties.getProperty("storePassword")
+                keyAlias = signingProperties.getProperty("keyAlias")
+                keyPassword = signingProperties.getProperty("keyPassword")
+            }
+        }
+
+        buildTypes {
+            release {
+                signingConfig = signingConfigs.getByName("ownerRelease")
+            }
+        }
     }
 }
 
