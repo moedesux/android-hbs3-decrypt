@@ -63,6 +63,7 @@ class TestDocumentsProvider : DocumentsProvider() {
     override fun renameDocument(documentId: String, displayName: String): String {
         check(renameSupported)
         files.getValue(documentId).name = displayName
+        if (!displayName.endsWith(".part")) cancellationAfterFinalization = true
         return DocumentsContract.buildDocumentUri(AUTHORITY, documentId).toString()
     }
 
@@ -93,6 +94,7 @@ class TestDocumentsProvider : DocumentsProvider() {
         const val SOURCE_TREE_ID = "source-tree"
         private var nextId = 0
         var renameSupported = true
+        var cancellationAfterFinalization = false
         private val files = linkedMapOf<String, Document>()
         private val DEFAULT_ROOT_PROJECTION = arrayOf(
             DocumentsContract.Root.COLUMN_ROOT_ID, DocumentsContract.Root.COLUMN_DOCUMENT_ID,
@@ -107,11 +109,14 @@ class TestDocumentsProvider : DocumentsProvider() {
 
         fun installFixture(resolver: android.content.ContentResolver) {
             renameSupported = true
+            cancellationAfterFinalization = false
             files.keys.toList().filter { it != ROOT_ID && it != SOURCE_ID }.forEach { deleteDocumentForTest(it) }
             writeSource(resolver, FIXTURE)
         }
         fun configureRenameSupported(value: Boolean) { renameSupported = value }
         fun installTreeFixture(resolver: android.content.ContentResolver) {
+            renameSupported = true
+            cancellationAfterFinalization = false
             files.keys.toList().filter { it != ROOT_ID && it != SOURCE_ID }.forEach { deleteDocumentForTest(it) }
             files[SOURCE_TREE_ID] = Document("", "Encrypted source", DocumentsContract.Document.MIME_TYPE_DIR, File(fixtureDir, SOURCE_TREE_ID).apply { mkdirs() })
             val nested = createTestDocument(SOURCE_TREE_ID, DocumentsContract.Document.MIME_TYPE_DIR, "nested")

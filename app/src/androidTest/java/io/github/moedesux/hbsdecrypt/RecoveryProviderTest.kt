@@ -70,6 +70,19 @@ class RecoveryProviderTest {
         assertEquals("test", read("recovered.bin"))
     }
 
+    @Test fun cancellationDuringFileRemovesTemporaryOutput() {
+        var outcome: String? = null
+        var cancel = false
+        RecoveryRunner(resolver, executor).run(
+            source, tree, "provider-password".toCharArray(),
+            cancellation = DecryptionCancellation { cancel },
+            onProgress = { cancel = true },
+            onResult = { outcome = it }
+        )
+        assertTrue(outcome!!.contains("CANCELLED"))
+        assertTrue(childNames().isEmpty())
+    }
+
     private fun runRecovery(policy: CollisionPolicy = CollisionPolicy.SKIP): String {
         var outcome: String? = null
         val latch = CountDownLatch(1)

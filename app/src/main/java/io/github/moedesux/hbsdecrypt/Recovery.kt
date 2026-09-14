@@ -56,12 +56,13 @@ class RecoveryRunner(private val resolver: ContentResolver, private val executor
         var backup: Uri? = null
         try {
             if (existing != null) {
-                backup = runCatching { DocumentsContract.renameDocument(resolver, existing, ".${name}.replace-${System.nanoTime()}.part") }.getOrNull()
+                backup = runCatching { DocumentsContract.renameDocument(resolver, existing, ".${name}.replace-${System.nanoTime()}.part") }
+                    .getOrNull()?.let { existing }
             }
             val renamed = runCatching { DocumentsContract.renameDocument(resolver, temporary, name) }.getOrNull()
             if (renamed != null) {
                 backup?.let { check(DocumentsContract.deleteDocument(resolver, it)) }
-                return renamed
+                return temporary
             }
             // Some providers do not implement rename. Copy the completed temporary
             // document into its final name, keeping the old file until the copy wins.
