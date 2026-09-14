@@ -12,15 +12,15 @@ data class RecoveryState(val source: Uri? = null, val destination: Uri? = null, 
 
 class RecoveryRunner(private val resolver: ContentResolver, private val executor: Executor) {
     fun run(source: Uri, tree: Uri, password: CharArray, policy: CollisionPolicy = CollisionPolicy.SKIP, cancellation: DecryptionCancellation = DecryptionCancellation { false }, onProgress: (Long) -> Unit, onResult: (String) -> Unit) = executor.execute {
-        runFiles(listOf(FileEntry(source, listOf(displayName(source)))), tree, password, policy, cancellation, onProgress, onResult)
+        runFiles(listOf(FileEntry(source, listOf(displayName(source)))), tree, password, policy, cancellation, onProgress, onResult, {}, legacyResult = true)
     }
 
-    fun runTree(sourceTree: Uri, destinationTree: Uri, password: CharArray, policy: CollisionPolicy = CollisionPolicy.SKIP, cancellation: DecryptionCancellation = DecryptionCancellation { false }, onProgress: (Long) -> Unit, onResult: (String) -> Unit) = executor.execute {
-        try { runFiles(entries(sourceTree), destinationTree, password, policy, cancellation, onProgress, onResult) }
-        catch (e: Exception) { password.fill('\u0000'); onResult("Failed: ${e.message ?: "I/O error"}") }
+    fun runTree(sourceTree: Uri, destinationTree: Uri, password: CharArray, policy: CollisionPolicy = CollisionPolicy.SKIP, cancellation: DecryptionCancellation = DecryptionCancellation { false }, onProgress: (Long) -> Unit, onResult: (String) -> Unit, onComplete: (RecoveryCounts) -> Unit = {}) = executor.execute {
+        try { runFiles(entries(sourceTree), destinationTree, password, policy, cancellation, onProgress, onResult, onComplete) }
+        catch (e: Exception) { password.fill('\u0000'); onResult("Failed: ${e.message ?: "I/O error"}"); onComplete(RecoveryCounts(failed = 1)) }
     }
 
-    private fun runFiles(entries: List<FileEntry>, destination: Uri, password: CharArray, policy: CollisionPolicy, cancellation: DecryptionCancellation, onProgress: (Long) -> Unit, onResult: (String) -> Unit) {
+    private fun runFiles(entries: List<FileEntry>, destination: Uri, password: CharArray, policy: CollisionPolicy, cancellation: DecryptionCancellation, onProgress: (Long) -> Unit, onResult: (String) -> Unit, onComplete: (RecoveryCounts) -> Unit = {}, legacyResult: Boolean = false) {
         var counts = RecoveryCounts(); val messages = mutableListOf<String>()
         entries.forEach { entry ->
             if (cancellation.isCancellationRequested()) { counts = counts.copy(cancelled = counts.cancelled + 1); return@forEach }
@@ -32,13 +32,13 @@ class RecoveryRunner(private val resolver: ContentResolver, private val executor
                 temporary = DocumentsContract.createDocument(resolver, parent, "application/octet-stream", "$name.part") ?: error("Could not create temporary output")
                 val result = resolver.openInputStream(entry.uri)!!.use { input -> resolver.openOutputStream(temporary)!!.use { output -> BufferedOutputStream(output).use { HbsDecrypt.decrypt(input, it, password.copyOf(), cancellation = cancellation, progress = DecryptionProgress { onProgress(it) }) } } }
                 when (result) {
-                    is DecryptionResult.Success -> { if (existing != null) backup = DocumentsContract.renameDocument(resolver, existing, ".${name}.replace-${System.nanoTime()}.part") ?: error("Provider cannot safely replace existing output"); try { check(DocumentsContract.renameDocument(resolver, temporary, name) != null) } catch (e: Exception) { backup?.let { if (runCatching { DocumentsContract.renameDocument(resolver, it, name) }.isSuccess) backup = null }; throw e }; backup?.let { runCatching { DocumentsContract.deleteDocument(resolver, it) } }; temporary = null; counts = counts.copy(decrypted = counts.decrypted + 1); messages += "Recovered: $name (${result.bytesWritten} bytes)" }
+                    is DecryptionResult.Success -> { if (existing != null) { check(DocumentsContract.renameDocument(resolver, existing, ".${name}.replace-${System.nanoTime()}.part") != null); backup = existing }; try { check(DocumentsContract.renameDocument(resolver, temporary, name) != null) } catch (e: Exception) { backup?.let { if (runCatching { DocumentsContract.renameDocument(resolver, it, name) }.isSuccess) backup = null }; throw e }; backup?.let { runCatching { DocumentsContract.deleteDocument(resolver, it) } }; temporary = null; counts = counts.copy(decrypted = counts.decrypted + 1); messages += "Recovered: $name (${result.bytesWritten} bytes)" }
                     is DecryptionResult.Failure -> { counts = when (result.reason) { FailureReason.NOT_SALTED_ENVELOPE -> counts.copy(unsupported = counts.unsupported + 1); FailureReason.CANCELLED -> counts.copy(cancelled = counts.cancelled + 1); else -> counts.copy(failed = counts.failed + 1) }; messages += "${result.reason}: $name" }
                 }
             } catch (e: Exception) { counts = counts.copy(failed = counts.failed + 1); messages += "Failed: $name (${e.message ?: "I/O error"})" }
             finally { temporary?.let { runCatching { DocumentsContract.deleteDocument(resolver, it) } }; backup?.let { runCatching { DocumentsContract.deleteDocument(resolver, it) } } }
         }
-        password.fill('\u0000'); onResult("${counts.decrypted} recovered, ${counts.skipped} skipped, ${counts.unsupported} unsupported, ${counts.cancelled} cancelled, ${counts.failed} failed" + if (messages.isEmpty()) "" else ": ${messages.joinToString("; ")}")
+        password.fill('\u0000'); onResult(if (legacyResult && messages.size == 1) { val message = messages.single(); if (message.startsWith("NOT_SALTED_ENVELOPE:") || message.startsWith("IO_ERROR:") || message.startsWith("INVALID_PASSWORD_OR_DATA:")) "Failed: $message" else message } else "${counts.decrypted} recovered, ${counts.skipped} skipped, ${counts.unsupported} unsupported, ${counts.cancelled} cancelled, ${counts.failed} failed" + if (messages.isEmpty()) "" else ": ${messages.joinToString("; ")}"); onComplete(counts)
     }
 
     private data class FileEntry(val uri: Uri, val parts: List<String>)

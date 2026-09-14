@@ -13,6 +13,8 @@ import java.io.File
 class TestDocumentsProvider : DocumentsProvider() {
     override fun onCreate(): Boolean {
         val dir = requireNotNull(context).filesDir
+        fixtureDir = dir
+        nextId = 0
         files.clear()
         files[ROOT_ID] = Document("", "Test provider", DocumentsContract.Document.MIME_TYPE_DIR, dir)
         files[SOURCE_ID] = Document("source-bucket", "recovered.bin", "application/octet-stream", File(dir, SOURCE_ID).apply { createNewFile() })
@@ -53,7 +55,7 @@ class TestDocumentsProvider : DocumentsProvider() {
 
     override fun createDocument(parentDocumentId: String, mimeType: String, displayName: String): String {
         val id = "document-${nextId++}"
-        val file = File(requireNotNull(context).filesDir, id).apply { createNewFile() }
+        val file = File(requireNotNull(context).filesDir, id).apply { if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR) mkdirs() else createNewFile() }
         files[id] = Document(parentDocumentId, displayName, mimeType, file)
         return id
     }
@@ -87,6 +89,7 @@ class TestDocumentsProvider : DocumentsProvider() {
         const val AUTHORITY = "io.github.moedesux.hbsdecrypt.test.documents"
         const val ROOT_ID = "root"
         const val SOURCE_ID = "source"
+        const val SOURCE_TREE_ID = "source-tree"
         private var nextId = 0
         private val files = linkedMapOf<String, Document>()
         private val DEFAULT_ROOT_PROJECTION = arrayOf(
@@ -104,6 +107,20 @@ class TestDocumentsProvider : DocumentsProvider() {
             files.keys.toList().filter { it != ROOT_ID && it != SOURCE_ID }.forEach { deleteDocumentForTest(it) }
             writeSource(resolver, FIXTURE)
         }
+        fun installTreeFixture(resolver: android.content.ContentResolver) {
+            files.keys.toList().filter { it != ROOT_ID && it != SOURCE_ID }.forEach { deleteDocumentForTest(it) }
+            files[SOURCE_TREE_ID] = Document("", "Encrypted source", DocumentsContract.Document.MIME_TYPE_DIR, File(fixtureDir, SOURCE_TREE_ID).apply { mkdirs() })
+            val nested = createTestDocument(SOURCE_TREE_ID, DocumentsContract.Document.MIME_TYPE_DIR, "nested")
+            val unicode = createTestDocument(nested, "application/octet-stream", "éxample 文件.bin")
+            val invalid = createTestDocument(SOURCE_TREE_ID, "application/octet-stream", "unsupported.bin")
+            val empty = createTestDocument(SOURCE_TREE_ID, "application/octet-stream", "empty.bin")
+            write(resolver, unicode, FIXTURE)
+            write(resolver, invalid, byteArrayOf(1, 2, 3))
+            write(resolver, empty, EMPTY_FIXTURE)
+        }
+        fun sourceTreeUri(): Uri = DocumentsContract.buildDocumentUriUsingTree(
+            DocumentsContract.buildTreeDocumentUri(AUTHORITY, SOURCE_TREE_ID), SOURCE_TREE_ID
+        )
         fun installInvalidSource(resolver: android.content.ContentResolver) = writeSource(resolver, byteArrayOf(1, 2, 3))
         fun installExisting(resolver: android.content.ContentResolver, name: String, contents: String) {
             val document = DocumentsContract.createDocument(resolver, treeUri(), "text/plain", name)!!
@@ -114,6 +131,15 @@ class TestDocumentsProvider : DocumentsProvider() {
         private fun writeSource(resolver: android.content.ContentResolver, bytes: ByteArray) {
             resolver.openOutputStream(DocumentsContract.buildDocumentUri(AUTHORITY, SOURCE_ID), "wt")!!.use { it.write(bytes) }
         }
+        private fun write(resolver: android.content.ContentResolver, id: String, bytes: ByteArray) {
+            resolver.openOutputStream(DocumentsContract.buildDocumentUri(AUTHORITY, id), "wt")!!.use { it.write(bytes) }
+        }
+        private fun createTestDocument(parent: String, mimeType: String, name: String): String {
+            val id = "fixture-${nextId++}"
+            val file = File(fixtureDir, id).apply { if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR) mkdirs() else createNewFile() }
+            files[id] = Document(parent, name, mimeType, file)
+            return id
+        }
         private fun treeUri(): Uri = DocumentsContract.buildDocumentUriUsingTree(
             DocumentsContract.buildTreeDocumentUri(AUTHORITY, ROOT_ID), ROOT_ID
         )
@@ -121,5 +147,9 @@ class TestDocumentsProvider : DocumentsProvider() {
         private val FIXTURE = android.util.Base64.decode(
             "U2FsdGVkX1/pG8/UPo+1NBpGiQBUf7GAYQW0iwFAwdU=", android.util.Base64.DEFAULT
         )
+        private val EMPTY_FIXTURE = android.util.Base64.decode(
+            "U2FsdGVkX1/nXyIMqVUKsin2ssSz1z2N+14avCtvSJA=", android.util.Base64.DEFAULT
+        )
+        private lateinit var fixtureDir: File
     }
 }
