@@ -65,16 +65,23 @@ class RecoveryRunner(private val resolver: ContentResolver, private val executor
             }
             // Some providers do not implement rename. Copy the completed temporary
             // document into its final name, keeping the old file until the copy wins.
-            val final = DocumentsContract.createDocument(resolver, parent, "application/octet-stream", name)
-                ?: error("Could not create final output")
+            var final = DocumentsContract.createDocument(resolver, parent, "application/octet-stream", name)
+            if (final == null && existing != null && backup == null) {
+                    // The provider may reject duplicate names. The temporary is
+                    // complete at this point, so deleting the old output is the
+                    // safest available non-atomic replacement operation.
+                    check(DocumentsContract.deleteDocument(resolver, existing))
+                final = DocumentsContract.createDocument(resolver, parent, "application/octet-stream", name)
+            }
+            val finalDocument = final ?: error("Could not create final output")
             try {
-                resolver.openInputStream(temporary)!!.use { input -> resolver.openOutputStream(final)!!.use { output -> input.copyTo(output) } }
+                resolver.openInputStream(temporary)!!.use { input -> resolver.openOutputStream(finalDocument)!!.use { output -> input.copyTo(output) } }
                 backup?.let { check(DocumentsContract.deleteDocument(resolver, it)) }
                 if (existing != null && backup == null) check(DocumentsContract.deleteDocument(resolver, existing))
                 check(DocumentsContract.deleteDocument(resolver, temporary))
-                return final
+                return finalDocument
             } catch (failure: Exception) {
-                runCatching { DocumentsContract.deleteDocument(resolver, final) }
+                runCatching { DocumentsContract.deleteDocument(resolver, finalDocument) }
                 throw failure
             }
         } catch (failure: Exception) {

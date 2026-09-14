@@ -63,6 +63,13 @@ class RecoveryProviderTest {
         assertEquals(listOf("recovered.bin"), childNames())
     }
 
+    @Test fun replacesThroughCopyWhenProviderCannotRename() {
+        TestDocumentsProvider.configureRenameSupported(false)
+        TestDocumentsProvider.installExisting(resolver, "recovered.bin", "replace me")
+        assertEquals("Recovered: recovered.bin (4 bytes)", runRecovery(CollisionPolicy.REPLACE))
+        assertEquals("test", read("recovered.bin"))
+    }
+
     private fun runRecovery(policy: CollisionPolicy = CollisionPolicy.SKIP): String {
         var outcome: String? = null
         val latch = CountDownLatch(1)
